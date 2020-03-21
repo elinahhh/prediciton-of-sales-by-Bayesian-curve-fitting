@@ -21,14 +21,7 @@ i = 14 #Books_Publications
 i = 15 #Jewelry
 
 
-
-
-
-setwd("C:/Users/lichee/Documents/Block 3 Case Study/feyenoord+data")
-
-
-
-### Part II ###
+# packages 
 
 library(sqldf)
 
