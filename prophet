@@ -1,0 +1,426 @@
+### Page 1 ###### Data preparation and choose the i from the top for the next two pages predictions (Ctrl+A, Ctrl+Enter, done) #########
+
+i = 3 #Other_Event-related
+
+i = 7 #Ambiance
+
+i = 8 #Championship
+
+i = 9 #Own_Management_royalty
+
+i = 10 #Sports_Games
+
+i = 11 #Own_Management_extern
+
+i = 12 #Bed_Bath
+
+i = 13 #Baby
+
+i = 14 #Books_Publications
+
+i = 15 #Jewelry
+
+
+
+
+
+setwd("C:/Users/lichee/Documents/Block 3 Case Study/feyenoord+data")
+
+
+
+### Part II ###
+
+library(sqldf)
+
+library(prophet)
+
+library(data.table)
+
+library(dplyr)
+
+library(tidyr)
+
+library(padr)
+
+
+
+## Preparation ##
+
+merchandise <- fread("merchandiseNN.csv")
+
+merchandise$date <- paste(merchandise$Year, sep = "-", merchandise$Month)
+
+merchandise$date <- paste(merchandise$date, sep = "-", merchandise$Day)
+
+merchandise$date <- as.Date(merchandise$date)
+
+
+
+
+
+# Loop to seperate all categories
+
+ProductCategory <- unique(merchandise$ProductCategory)
+
+nrowDF <- list(NULL)
+
+
+
+categoryDF <- as.data.frame(NULL)
+
+i <-1
+
+
+
+for (i in 1:15){
+
+  pc <- as.character(ProductCategory[i])
+
+  index <- grepl(pc, merchandise$ProductCategory, fixed = TRUE)
+
+  DF <- merchandise[index,]
+
+  categoryDF <- rbind(categoryDF,DF)
+
+  nrowDF[i] <- nrow(categoryDF)
+
+}
+
+print(nrowDF)
+
+
+
+## Championship effect dummies
+
+champion <- data.frame(holiday = 'champion', ds = as.Date(c('2017-05-07','2017–05–14','2017-05-15')),
+
+                       lower_window = -1, upper_window = 1)
+
+
+
+champion_month <- data.frame(holiday = 'champion_month', ds = as.Date('2017-05-01'),
+
+                             lower_window = 0, upper_window = 1)
+
+                             
+
+                             
+
+
+
+
+
+## Page 2 ############## Monthly data NO Yearly Seasonality ################################
+
+
+
+
+
+DF_ <- NULL
+
+DF <- NULL
+
+m <- NULL
+
+
+
+## Data preparation
+
+DF_ <- categoryDF[c((as.numeric(nrowDF[i-1])+1)):as.numeric(nrowDF[i]),]
+
+DF <- sqldf("select sum(ProductUnits), date 
+
+            from DF_
+
+            group by date ")    # adding up the daily sales of certain product
+
+DF<- DF%>% separate(date, c("Year", "Month", "Day"), sep = "-")
+
+DF$Day <- 1
+
+DF<- unite(DF, date, 2:ncol(DF), sep = "-")
+
+
+
+colnames(DF)[1] <- "sold"
+
+DF<- sqldf("select sum(sold), date 
+
+           from DF
+
+           group by date ")
+
+
+
+colnames(DF)[1] <- "y"
+
+colnames(DF)[2] <- "ds"
+
+DF$ds <- as.Date(DF$ds)
+
+
+
+## Forcast
+
+DF <- pad(DF)
+
+sum(is.na(DF$y))
+
+
+
+DF$y <- log(DF$y)
+
+DF$y [!is.finite(DF$y)] <- NA
+
+n <- nrow(DF)
+
+DF <- DF[-n,]
+
+n <- nrow(DF)
+
+
+
+
+
+m <- prophet(DF, daily.seasonality = FALSE, weekly.seasonality=FALSE, yearly.seasonality= FALSE, holidays = champion_month )
+
+
+
+### cross-validation
+
+#df.cv <- cross_validation(m, initial = n*0.7, period = n*0.3, horizon = 365, units = 'days')
+
+#df.p <- performance_metrics(df.cv)
+
+#summary(df.p)
+
+
+
+future <- make_future_dataframe(m, periods = 15, freq = "month") 
+
+forDF <- predict(m, future) 
+
+
+
+
+
+## csv record
+
+recordDF <- select(forDF,ds,yhat)
+
+lower <- round(exp(forDF$yhat_lower))
+
+upper <- round(exp(forDF$yhat_upper))
+
+average <- round(exp(forDF$yhat))
+
+recordDF <- cbind(recordDF,lower,upper,average)
+
+write.csv(recordDF,"Books_Publications_NoYS.csv")
+
+
+
+
+
+
+
+plot(m, forDF)
+
+## Record
+
+# Produce a PNG graph of the forcasts
+
+png('Books_Publications_NoYS.png')
+
+plot(m, forDF,  xlabel = "Time",  ylabel = "ln Books_Publications")    #needs to be specified
+
+dev.off()
+
+
+
+
+
+
+
+## cross-validation
+
+ind <- round(0.7*n)
+
+ind1 <- as.numeric(ind+1)
+
+ind.test <- n-ind
+
+DF.test <- DF[ind1:n,]
+
+
+
+
+
+m.test <- prophet(DF[1:ind,], daily.seasonality = FALSE,weekly.seasonality=FALSE, yearly.seasonality=FALSE, holidays = champion_month )
+
+future.test <- make_future_dataframe(m.test, periods = ind.test, freq = "month")
+
+forDT.test <- predict(m.test, future.test)
+
+
+
+MAPE <- mean(abs((forDT.test$yhat[c(ind1:n)]-DF.test$y)/DF.test$y))
+
+MAPE
+
+
+
+
+
+
+
+### Page 3 ################# Monthly data Yearly Seasonality ##############################
+
+
+
+
+
+
+
+DF_ <- NULL
+
+DF <- NULL
+
+m <- NULL
+
+
+
+## Data preparation
+
+DF_ <- categoryDF[c((as.numeric(nrowDF[i-1])+1)):as.numeric(nrowDF[i]),]
+
+DF <- sqldf("select sum(ProductUnits), date 
+
+            from DF_
+
+            group by date ")    # adding up the daily sales of certain product
+
+DF<- DF%>% separate(date, c("Year", "Month", "Day"), sep = "-")
+
+DF$Day <- 1
+
+DF<- unite(DF, date, 2:ncol(DF), sep = "-")
+
+
+
+colnames(DF)[1] <- "sold"
+
+DF<- sqldf("select sum(sold), date 
+
+           from DF
+
+           group by date ")
+
+
+
+colnames(DF)[1] <- "y"
+
+colnames(DF)[2] <- "ds"
+
+DF$ds <- as.Date(DF$ds)
+
+
+
+## Forcast
+
+DF <- pad(DF)
+
+sum(is.na(DF$y))
+
+
+
+DF$y <- log(DF$y)
+
+DF$y [!is.finite(DF$y)] <- NA
+
+n <- nrow(DF)
+
+DF <- DF[-n,]
+
+n <- nrow(DF)
+
+
+
+
+
+m <- prophet(DF, yearly.seasonality=TRUE, holidays = champion_month)
+
+
+
+
+
+future <- make_future_dataframe(m, periods = 15, freq = 'month') 
+
+forDF <- predict(m, future)
+
+
+
+## csv record
+
+recordDF <- select(forDF,ds,yhat)
+
+lower <- round(exp(forDF$yhat_lower))
+
+upper <- round(exp(forDF$yhat_upper))
+
+average <- round(exp(forDF$yhat))
+
+recordDF <- cbind(recordDF,lower,upper,average)
+
+write.csv(recordDF,"Books_Publications_YS.csv")
+
+
+
+
+
+plot(m, forDF)
+
+## Record
+
+# Produce a PNG graph of the forcasts
+
+png('Books_Publications_YS.png')
+
+plot(m, forDF,  xlabel = "Time",  ylabel = "ln Books_Publications")   #needs to be specified
+
+dev.off()
+
+
+
+
+
+
+
+
+
+## cross-validation
+
+ind <- round(0.7*n)
+
+ind1 <- as.numeric(ind+1)
+
+ind.test <- n-ind
+
+DF.test <- DF[ind1:n,]
+
+
+
+m.test <- prophet(DF[1:ind,], daily.seasonality = FALSE,weekly.seasonality=FALSE, yearly.seasonality=TRUE, holidays = champion_month )
+
+future.test <- make_future_dataframe(m.test, periods = ind.test, freq = "month" )
+
+forDT.test <- predict(m.test, future.test)
+
+
+
+
+
+MAPE <- mean(abs((forDT.test$yhat[c(ind1:n)]-DF.test$y)/DF.test$y))
+
+MAPE
+
